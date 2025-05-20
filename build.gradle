@@ -1,16 +1,25 @@
+import com.bmuschko.gradle.docker.tasks.image.DockerBuildImage
+import com.bmuschko.gradle.docker.tasks.image.DockerRemoveImage
+import com.bmuschko.gradle.docker.tasks.image.DockerPushImage
+import com.bmuschko.gradle.docker.tasks.image.DockerSaveImage
+import com.bmuschko.gradle.docker.tasks.image.DockerLoadImage
+import com.bmuschko.gradle.docker.tasks.image.Dockerfile
+
 plugins {
-	id 'org.springframework.boot' version '3.1.0'
-	id 'io.spring.dependency-management' version '1.1.0'
+	id 'org.springframework.boot' version '3.4.5'
+	id 'io.spring.dependency-management' version '1.1.7'
 	id 'java'
-	id "com.palantir.docker" version "0.33.0"
-	id "com.palantir.docker-run" version "0.33.0"
-	//información de los plugin docker https://github.com/palantir/gradle-docker
+	id 'com.bmuschko.docker-remote-api' version '9.4.0'
+	id 'eclipse'
 }
 
 group = 'us.mitfs.samples'
 version = '0.0.1-SNAPSHOT'
-sourceCompatibility = '17'
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
 repositories {
 	mavenCentral()
 	maven {
@@ -24,7 +33,7 @@ repositories {
 		}
 	}
 	maven {
-		url "https://mvnrepository.com/artifact/com.spotify/github-client"
+		url="https://mvnrepository.com/artifact/com.spotify/github-client"
 	}
 }
 
@@ -38,18 +47,110 @@ tasks.named('test') {
 	useJUnitPlatform()
 }
 docker {
-    copySpec.from("build/libs").into("build/libs")
-    name "audit-server:$version"
-    buildArgs([VERSION:version])
+	registryCredentials {
+		username = project.findProperty("gpr.dockerlog") ?: System.getenv("DOCKER_LOGIN")
+		password = project.findProperty("gpr.dockerkey") ?: System.getenv("DOCKER_PWD")
+	}
 }
-dockerRun {
-    name 'auditServerContainer'
-    image 'audit-server:0.0.1-SNAPSHOT'
-    ports '8080:8080'
-    daemonize true
-    env 'GITHUB_LOGIN': project.findProperty("gpr.user") ?: System.getenv("GITHUB_LOGIN"), 'GITHUB_OAUTH': project.findProperty("gpr.key") ?: System.getenv("GITHUB_OAUTH")
+task copyJarToDockerContext(type: Copy) {
+    dependsOn build
+    from("build/libs/auditserver-0.0.1-SNAPSHOT.jar")
+    into("build/docker")
 }
+task createDockerfile(type: Dockerfile) {
+    group = 'docker'
+    description = 'Construye el dockerfile del contenedor del servicio'
+    destFile = project.file('build/docker/Dockerfile')
+    from 'openjdk:17-alpine'  
+   // copyFile 'build/libs/auditserver-0.0.1-SNAPSHOT.jar', '/app/auditserver.jar'
+    copyFile 'auditserver-0.0.1-SNAPSHOT.jar', '/app/auditserver.jar'
+    entryPoint 'java'
+    defaultCommand '-jar', '/app/auditserver.jar'
+    exposePort 8080
+    runCommand 'apk --update --no-cache add curl'
+  //  instruction 'HEALTHCHECK CMD curl -f http://localhost:8080/health || exit 1'
+}
+
+
+task buildImage(type: DockerBuildImage) {
+    dependsOn 'createDockerfile', 'copyJarToDockerContext'
+    group = 'docker'
+    description = 'Construye la imagen Docker del servicio REST'
+    inputDir = file('build/docker')
+    dockerFile = file('build/docker/Dockerfile')
+    buildArgs = ['VERSION': version]    
+    images.add("audit-server:${version}")
+}
+
+
+
+
+tasks.register('stopContainer') {
+    doLast {
+        exec {
+            commandLine 'docker', 'stop', 'auditServerContainer'
+        }
+    }
+}
+
+tasks.register('removeContainer') {
+    dependsOn 'stopContainer'
+    doLast {
+        exec {
+            commandLine 'docker', 'rm', 'auditServerContainer'
+        }
+    }
+}
+
+tasks.register('kindClusterUp') {
+	group = "kind"
+	description = "Levanta un clúster kind local"
+	doLast {
+		exec {
+			commandLine 'kind', 'create', 'cluster', '--name', 'audit-cluster'
+		}
+	}
+}
+
+tasks.register('kindClusterDown') {
+	group = "kind"
+	description = "Elimina el clúster kind"
+	doLast {
+		exec {
+			commandLine 'kind', 'delete', 'cluster', '--name', 'audit-cluster'
+		}
+	}
+}
+
+tasks.register('loadDockerToKind') {
+	group = "kind"
+	description = "Carga la imagen Docker en el clúster kind"
+	dependsOn 'buildDockerImage'
+	doLast {
+		exec {
+			commandLine 'kind', 'load', 'docker-image', "audit-server:${version}", '--name', 'audit-cluster'
+		}
+	}
+}
+
+tasks.register('helmDeploy') {
+	group = "helm"
+	description = "Despliega el servicio con Helm"
+	doLast {
+		exec {
+			commandLine 'helm', 'upgrade', '--install', 'audit-server', './helm', '--namespace', 'default', '--create-namespace'
+		}
+	}
+}
+tasks.register('localDeploy') {
+	group = "deployment"
+	description = "Despliegue completo en kind"
+	dependsOn 'kindClusterUp', 'buildDockerImage', 'loadDockerToKind', 'helmDeploy'
+}
+
 tasks.register('localenv-up') {
+    group = "localenv-lin"
+	description = "Lenvantar el cluster en linux"
 	doLast {
 		exec {
 			executable "./scripts/localenv/up.sh"
@@ -58,6 +159,8 @@ tasks.register('localenv-up') {
 }
 
 tasks.register('localenv-down') {
+    group = "localenv-lin"
+	description = "Detener el despliegue en linux"
 	doLast {
 		exec {
 			executable "./scripts/localenv/down.sh"
@@ -66,6 +169,8 @@ tasks.register('localenv-down') {
 }
 
 tasks.register('localenv-build') {
+    group = "localenv-lin"
+	description = "Construir en linux"
 	dependsOn 'localenv-up'
 	doLast {
 		exec {
@@ -75,6 +180,8 @@ tasks.register('localenv-build') {
 }
 
 tasks.register('localenv-deploy') {
+    group = "localenv-lin"
+	description = "Despleguar en linux"
 	dependsOn 'localenv-build'
 	doLast {
 		exec {
@@ -84,6 +191,8 @@ tasks.register('localenv-deploy') {
 }
 
 tasks.register('localenv-win-up') {
+    group = "localenv-win"
+	description = "Lenvantar el cluster en windows"
    
     doLast {
 		exec {
@@ -93,6 +202,8 @@ tasks.register('localenv-win-up') {
 }
 
 tasks.register('localenv-win-deploy') {
+    group = "localenv-win"
+	description = "Despliegue en windows"
    	doLast {
 		exec {
 			commandLine  "powershell", "./scripts/localenv/win-deploy.ps1"
@@ -100,6 +211,8 @@ tasks.register('localenv-win-deploy') {
 	}
 }
 tasks.register('localenv-win-down') {
+    group = "localenv-win"
+	description = "Detener el despliegue en windows"
 	doLast {
 		exec {
 			commandLine  "powershell", "./scripts/localenv/win-down.ps1"

@@ -39,6 +39,8 @@ jobs:
       GITHUB_LOGIN: ${{ github.actor }}
       GITHUB_PACKAGES: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+      DOCKER_LOGIN: ${{ secrets.DOCKER_LOGIN }}
+      DOCKER_PWD: ${{ secrets.DOCKER_PWD }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-java@v3
@@ -50,12 +52,9 @@ jobs:
           echo "APP_VERSION=$(grep "version =" build.gradle | awk '{print $3}' | sed "s/'//g")" >> $GITHUB_ENV
           ./gradlew build -x test --no-daemon
       - name: Build docker image
-        uses: docker/build-push-action@v2
-        with:
-          context: .
-          push: false
-          tags: audit-server:${{ env.APP_VERSION }}
-          build-args: VERSION=${{ env.APP_VERSION }}
+        run: |
+          echo "Construyendo la imagen docker"
+          ./gradlew buildImage
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1.2.0
         with:
