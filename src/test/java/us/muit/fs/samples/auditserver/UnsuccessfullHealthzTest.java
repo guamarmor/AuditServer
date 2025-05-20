@@ -15,22 +15,22 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import java.util.Map;
 
 
-@SpringBootTest(classes = us.muit.fs.samples.auditserver.AuditserverApplication.class)
-class AuditserverApplicationTests {
+
+@SpringBootTest(classes = us.muit.fs.samples.auditserver.AuditserverApplication.class,webEnvironment = WebEnvironment.RANDOM_PORT, properties = { "app.healthzGithubRepo=fakerepo" })
+class UnsuccessfulHealthzTest {
+
+	@LocalServerPort
+	private int port;
 
 	@Autowired
-	private HealthController controller;
+	private TestRestTemplate restTemplate;
 
 	@Test
-	void contextLoads() {
-		assertNotNull(controller,"El controlador no se ha cargado");
+	public void healthz() throws Exception {
+		String endpoint = "http://localhost:" + port + "/readyz";
+		Map<String, Object> endpointResponse = this.restTemplate.getForObject(endpoint, Map.class);
+		assertThat(endpointResponse).containsKeys("healthy", "error");
+		assertThat(endpointResponse.get("healthy")).isEqualTo(false);
 	}
-
 }
-
-
-
-
-
-
 

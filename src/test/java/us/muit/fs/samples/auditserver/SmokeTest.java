@@ -15,22 +15,17 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import java.util.Map;
 
 
+
 @SpringBootTest(classes = us.muit.fs.samples.auditserver.AuditserverApplication.class)
-class AuditserverApplicationTests {
+class SmokeTest {
 
 	@Autowired
 	private HealthController controller;
 
 	@Test
 	void contextLoads() {
-		assertNotNull(controller,"El controlador no se ha cargado");
+		assertThat(controller).isNotNull();
 	}
 
 }
-
-
-
-
-
-
 

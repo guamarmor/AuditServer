@@ -1,9 +1,11 @@
-Write-Output "Ejecuta ./gradlew.bat build para construir el artefacto .jar"
-./gradlew.bat assemble
-Write-Output "Construye el contenedor docker"
-./gradlew.bat docker
-Write-Output "Levanta el cluster local"
-./gradlew.bat localenv-win-up
+Write-Output "Ejecuta bootJar para construir el artefacto .jar"
+./gradlew bootJar
+Write-Output "Ejecuta createDockerfile para crear el DockerFile"
+./gradlew createDockerfile
+Write-Output "Ejecuta buildImage para construir la imagen docker"
+./gradlew buildImage
+Write-Output "Ejecuta localenv-win-up para levantar el cluster"
+./gradlew localenv-win-up
 Write-Output "Lee versión de build.gradle"
 $version_line = (Select-String -Path "build.gradle" -Pattern 'version =').ToString()
 $version = $version_line.split(' ')[-1].replace("'", "")
