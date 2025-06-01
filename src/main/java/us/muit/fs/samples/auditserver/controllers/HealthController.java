@@ -54,10 +54,13 @@ ResponseEntity<Map<String, Object>> healthz() {
 		System.out.println("Invoco getMetric de GitHubRepositoryEnquirer con repo "+healthzGithubRepo);
 		Metric myMetric = remote.getMetric("totalAdditions",healthzGithubRepo);
 	
-		if(((Integer)myMetric.getValue()!=0) && (myMetric.getName()=="totalAdditions")){
+		if(((Integer)myMetric.getValue()!=0) && (myMetric.getName().equals("totalAdditions"))){
 			body.put("healthy", true);
 			body.put("totalAdditions", myMetric.getValue());
 			body.put("metric", myMetric);
+
+			
+			body.put("remoteRepo", healthzGithubRepo);  
 		}
 		return ResponseEntity.status(HttpStatus.OK).body(body);
 	}	catch(Exception ref) {
